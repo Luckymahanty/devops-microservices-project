@@ -302,8 +302,8 @@ MIT License
 ## 👤 Author
 
 **Laxmi Kanta Mahanty**
-- GitHub: [@yourusername](https://github.com/Luckymahanty)
-- LinkedIn: [Your Profile](http://www.linkedin.com/in/laxmi-kanta-mahanty-8abb88203)
+- GitHub: [@Luckymahanty](https://github.com/Luckymahanty)
+- LinkedIn: [LaxmiKanta Mahanty](http://www.linkedin.com/in/laxmi-kanta-mahanty-8abb88203)
 
 ---
 
