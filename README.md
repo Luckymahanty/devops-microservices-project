@@ -1,4 +1,5 @@
 # 🚀 DevOps Microservices E-Commerce Platform
+by-Lucky
 
 A production-ready microservices architecture demonstrating modern DevOps practices with complete CI/CD pipeline, containerization, and orchestration.
 
