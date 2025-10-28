@@ -1,0 +1,150 @@
+version: '3.8'
+
+services:
+  # MongoDB for User Service
+  user-db:
+    image: mongo:6.0
+    container_name: user-db
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: userdb
+    ports:
+      - "27017:27017"
+    volumes:
+      - user-data:/data/db
+    networks:
+      - microservices-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/userdb --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB for Product Service
+  product-db:
+    image: mongo:6.0
+    container_name: product-db
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: productdb
+    ports:
+      - "27018:27017"
+    volumes:
+      - product-data:/data/db
+    networks:
+      - microservices-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/productdb --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB for Order Service
+  order-db:
+    image: mongo:6.0
+    container_name: order-db
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: orderdb
+    ports:
+      - "27019:27017"
+    volumes:
+      - order-data:/data/db
+    networks:
+      - microservices-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/orderdb --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # User Service
+  user-service:
+    build:
+      context: ./services/user-service
+      dockerfile: Dockerfile
+    container_name: user-service
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - MONGO_URI=mongodb://user-db:27017/userdb
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+      - NODE_ENV=production
+    depends_on:
+      user-db:
+        condition: service_healthy
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Product Service
+  product-service:
+    build:
+      context: ./services/product-service
+      dockerfile: Dockerfile
+    container_name: product-service
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    environment:
+      - PORT=3002
+      - MONGO_URI=mongodb://product-db:27017/productdb
+      - NODE_ENV=production
+    depends_on:
+      product-db:
+        condition: service_healthy
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Order Service
+  order-service:
+    build:
+      context: ./services/order-service
+      dockerfile: Dockerfile
+    container_name: order-service
+    restart: unless-stopped
+    ports:
+      - "3003:3003"
+    environment:
+      - PORT=3003
+      - MONGO_URI=mongodb://order-db:27017/orderdb
+      - USER_SERVICE_URL=http://user-service:3001
+      - PRODUCT_SERVICE_URL=http://product-service:3002
+      - NODE_ENV=production
+    depends_on:
+      order-db:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  microservices-network:
+    driver: bridge
+
+volumes:
+  user-data:
+  product-data:
+  order-data:
