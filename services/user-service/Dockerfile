@@ -1,7 +1,7 @@
 # services/user-service/Dockerfile
 
 # Stage 1: Build stage
-FROM node:18-alpine AS builder
+FROM node:25-alpine AS builder
 
 # Set working directory
 WORKDIR /app
@@ -13,7 +13,7 @@ COPY package*.json ./
 RUN npm ci --only=production
 
 # Stage 2: Production stage
-FROM node:18-alpine
+FROM node:25-alpine
 
 # Create app directory
 WORKDIR /app
