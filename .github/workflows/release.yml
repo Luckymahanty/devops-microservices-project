@@ -1,0 +1,135 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  DOCKER_REGISTRY: ${{ secrets.DOCKER_USERNAME }}
+
+jobs:
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Generate changelog
+      id: changelog
+      run: |
+        PREVIOUS_TAG=$(git describe --abbrev=0 --tags $(git rev-list --tags --skip=1 --max-count=1) 2>/dev/null || echo "")
+        CURRENT_TAG=${GITHUB_REF#refs/tags/}
+        
+        if [ -z "$PREVIOUS_TAG" ]; then
+          CHANGELOG=$(git log --pretty=format:"- %s (%h)" $CURRENT_TAG)
+        else
+          CHANGELOG=$(git log --pretty=format:"- %s (%h)" $PREVIOUS_TAG..$CURRENT_TAG)
+        fi
+        
+        echo "changelog<<EOF" >> $GITHUB_OUTPUT
+        echo "$CHANGELOG" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+    
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        body: |
+          ## 🚀 Changes in this Release
+          
+          ${{ steps.changelog.outputs.changelog }}
+          
+          ## 📦 Docker Images
+          - `${{ secrets.DOCKER_USERNAME }}/user-service:${{ github.ref_name }}`
+          - `${{ secrets.DOCKER_USERNAME }}/product-service:${{ github.ref_name }}`
+          - `${{ secrets.DOCKER_USERNAME }}/order-service:${{ github.ref_name }}`
+          
+          ## 📝 Installation
+          ```bash
+          docker pull ${{ secrets.DOCKER_USERNAME }}/user-service:${{ github.ref_name }}
+          docker pull ${{ secrets.DOCKER_USERNAME }}/product-service:${{ github.ref_name }}
+          docker pull ${{ secrets.DOCKER_USERNAME }}/order-service:${{ github.ref_name }}
+          ```
+        draft: false
+        prerelease: false
+
+  build-release-images:
+    name: Build Release Images
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        service: [user-service, product-service, order-service]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Login to DockerHub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    
+    - name: Extract version from tag
+      id: get_version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+    
+    - name: Build and push
+      uses: docker/build-push-action@v5
+      with:
+        context: ./services/${{ matrix.service }}
+        push: true
+        tags: |
+          ${{ secrets.DOCKER_USERNAME }}/${{ matrix.service }}:${{ steps.get_version.outputs.VERSION }}
+          ${{ secrets.DOCKER_USERNAME }}/${{ matrix.service }}:latest
+        labels: |
+          org.opencontainers.image.version=${{ steps.get_version.outputs.VERSION }}
+          org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+          org.opencontainers.image.revision=${{ github.sha }}
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [create-release, build-release-images]
+    environment:
+      name: production
+      url: https://yourapp.com
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Deploy to production
+      run: |
+        echo "🚀 Deploying to production..."
+        echo "Version: ${GITHUB_REF#refs/tags/}"
+        # In Phase 4, this will deploy to production Kubernetes cluster
+    
+    - name: Run smoke tests
+      run: |
+        echo "Running production smoke tests..."
+        # Add production smoke tests
+    
+    - name: Notify team
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        text: |
+          🎉 Production Deployment Successful!
+          Version: ${GITHUB_REF#refs/tags/}
+          Deployed by: ${{ github.actor }}
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}

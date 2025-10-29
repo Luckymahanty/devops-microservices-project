@@ -1,0 +1,130 @@
+name: PR Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  pr-validation:
+    name: PR Validation
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Check PR title
+      run: |
+        PR_TITLE="${{ github.event.pull_request.title }}"
+        if [[ ! "$PR_TITLE" =~ ^(feat|fix|docs|style|refactor|test|chore)(\(.+\))?: ]]; then
+          echo "❌ PR title must follow conventional commits format"
+          echo "Examples: feat: add new feature, fix(api): resolve bug"
+          exit 1
+        fi
+        echo "✅ PR title is valid"
+    
+    - name: Check for sensitive data
+      run: |
+        echo "Checking for sensitive data..."
+        if grep -r "password\|secret\|api_key" --exclude-dir=node_modules --exclude-dir=.git .; then
+          echo "⚠️ Warning: Potential sensitive data found"
+        fi
+    
+    - name: Comment on PR
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: '👋 Thanks for your PR! The CI pipeline is running...'
+          })
+
+  code-review:
+    name: Automated Code Review
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+    
+    - name: Check file sizes
+      run: |
+        echo "Checking for large files..."
+        find . -type f -size +1M -not -path "*/node_modules/*" -not -path "*/.git/*"
+    
+    - name: Check code complexity
+      run: |
+        echo "Code complexity check placeholder"
+        # Add complexity checker tool here
+    
+    - name: Generate PR summary
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: files } = await github.rest.pulls.listFiles({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.issue.number,
+          });
+          
+          const summary = files.reduce((acc, file) => {
+            acc.additions += file.additions;
+            acc.deletions += file.deletions;
+            acc.changes += file.changes;
+            return acc;
+          }, { additions: 0, deletions: 0, changes: 0 });
+          
+          const body = `
+          ## 📊 PR Statistics
+          - **Files changed**: ${files.length}
+          - **Additions**: +${summary.additions}
+          - **Deletions**: -${summary.deletions}
+          - **Total changes**: ${summary.changes}
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: body
+          });
+
+  quick-tests:
+    name: Quick Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+    
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          services/*/node_modules
+        key: ${{ runner.os }}-node-${{ hashFiles('services/*/package-lock.json') }}
+    
+    - name: Quick test
+      run: |
+        echo "Running quick validation tests..."
+        for service in user-service product-service order-service; do
+          echo "Testing $service..."
+          cd services/$service
+          npm ci --prefer-offline
+          npm run test --if-present || echo "No tests configured yet"
+          cd ../..
+        done

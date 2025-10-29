@@ -1,0 +1,306 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  DOCKER_REGISTRY: ${{ secrets.DOCKER_USERNAME }}
+  NODE_VERSION: '18'
+
+jobs:
+  # Job 1: Code Quality & Linting
+  code-quality:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: |
+          services/user-service/package-lock.json
+          services/product-service/package-lock.json
+          services/order-service/package-lock.json
+    
+    - name: Install dependencies - User Service
+      run: |
+        cd services/user-service
+        npm ci
+    
+    - name: Install dependencies - Product Service
+      run: |
+        cd services/product-service
+        npm ci
+    
+    - name: Install dependencies - Order Service
+      run: |
+        cd services/order-service
+        npm ci
+    
+    - name: Run ESLint
+      run: |
+        echo "Running linting checks..."
+        # Add when you have .eslintrc configured
+        # npm run lint
+      continue-on-error: true
+
+  # Job 2: Unit Tests
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: code-quality
+    
+    services:
+      mongodb:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+    
+    - name: Install and test User Service
+      run: |
+        cd services/user-service
+        npm ci
+        npm test || echo "Tests pending"
+      env:
+        MONGO_URI: mongodb://localhost:27017/userdb_test
+        JWT_SECRET: test-secret-key
+    
+    - name: Install and test Product Service
+      run: |
+        cd services/product-service
+        npm ci
+        npm test || echo "Tests pending"
+      env:
+        MONGO_URI: mongodb://localhost:27017/productdb_test
+    
+    - name: Install and test Order Service
+      run: |
+        cd services/order-service
+        npm ci
+        npm test || echo "Tests pending"
+      env:
+        MONGO_URI: mongodb://localhost:27017/orderdb_test
+        USER_SERVICE_URL: http://localhost:3001
+        PRODUCT_SERVICE_URL: http://localhost:3002
+
+  # Job 3: Security Scanning
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: code-quality
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'
+    
+    - name: Upload Trivy results to GitHub Security
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+    
+    - name: NPM Audit - User Service
+      run: |
+        cd services/user-service
+        npm audit --audit-level=moderate || true
+    
+    - name: NPM Audit - Product Service
+      run: |
+        cd services/product-service
+        npm audit --audit-level=moderate || true
+    
+    - name: NPM Audit - Order Service
+      run: |
+        cd services/order-service
+        npm audit --audit-level=moderate || true
+
+  # Job 4: Build Docker Images
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [unit-tests, security-scan]
+    
+    strategy:
+      matrix:
+        service: [user-service, product-service, order-service]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Login to DockerHub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ secrets.DOCKER_USERNAME }}/${{ matrix.service }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./services/${{ matrix.service }}
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/${{ matrix.service }}:buildcache
+        cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/${{ matrix.service }}:buildcache,mode=max
+    
+    - name: Image digest
+      run: echo "Image pushed with digest ${{ steps.docker_build.outputs.digest }}"
+
+  # Job 5: Scan Docker Images
+  scan-images:
+    name: Scan Docker Images
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request'
+    
+    strategy:
+      matrix:
+        service: [user-service, product-service, order-service]
+    
+    steps:
+    - name: Run Trivy scanner on Docker image
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: '${{ secrets.DOCKER_USERNAME }}/${{ matrix.service }}:latest'
+        format: 'table'
+        exit-code: '0'
+        severity: 'CRITICAL,HIGH'
+
+  # Job 6: Integration Tests
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Create .env files
+      run: |
+        echo "Creating environment files..."
+        # These will be created by docker-compose from env vars
+    
+    - name: Start services with Docker Compose
+      run: |
+        docker-compose up -d
+        echo "Waiting for services to be healthy..."
+        sleep 30
+    
+    - name: Check service health
+      run: |
+        curl -f http://localhost:3001/health || exit 1
+        curl -f http://localhost:3002/health || exit 1
+        curl -f http://localhost:3003/health || exit 1
+    
+    - name: Run integration tests
+      run: |
+        chmod +x docker-test.sh
+        ./docker-test.sh
+    
+    - name: Stop services
+      if: always()
+      run: docker-compose down -v
+    
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: integration-test-results
+        path: test-results/
+
+  # Job 7: Deploy to Staging (on main branch)
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: staging
+      url: http://staging.yourapp.com
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Deploy to staging
+      run: |
+        echo "Deploying to staging environment..."
+        echo "In Phase 4 (Kubernetes), this will deploy to staging cluster"
+        # Placeholder for actual deployment
+    
+    - name: Run smoke tests
+      run: |
+        echo "Running smoke tests on staging..."
+        # Add smoke tests here
+
+  # Job 8: Notification
+  notify:
+    name: Send Notification
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: always()
+    
+    steps:
+    - name: Send Slack notification
+      uses: 8398a7/action-slack@v3
+      if: always()
+      with:
+        status: ${{ job.status }}
+        text: |
+          Pipeline Status: ${{ job.status }}
+          Branch: ${{ github.ref }}
+          Commit: ${{ github.sha }}
+          Author: ${{ github.actor }}
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}

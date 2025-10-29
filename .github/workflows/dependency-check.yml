@@ -1,0 +1,72 @@
+name: Dependency Check
+
+on:
+  schedule:
+    # Run every Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  check-dependencies:
+    name: Check for Outdated Dependencies
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+    
+    - name: Check User Service dependencies
+      run: |
+        cd services/user-service
+        npm ci
+        echo "## User Service" >> $GITHUB_STEP_SUMMARY
+        npm outdated >> $GITHUB_STEP_SUMMARY || true
+    
+    - name: Check Product Service dependencies
+      run: |
+        cd services/product-service
+        npm ci
+        echo "## Product Service" >> $GITHUB_STEP_SUMMARY
+        npm outdated >> $GITHUB_STEP_SUMMARY || true
+    
+    - name: Check Order Service dependencies
+      run: |
+        cd services/order-service
+        npm ci
+        echo "## Order Service" >> $GITHUB_STEP_SUMMARY
+        npm outdated >> $GITHUB_STEP_SUMMARY || true
+    
+    - name: Security audit
+      run: |
+        echo "# Security Audit Results" >> $GITHUB_STEP_SUMMARY
+        for service in user-service product-service order-service; do
+          echo "## $service" >> $GITHUB_STEP_SUMMARY
+          cd services/$service
+          npm audit --json > audit.json || true
+          cat audit.json >> $GITHUB_STEP_SUMMARY
+          cd ../..
+        done
+
+  dependabot-auto-merge:
+    name: Auto-merge Dependabot PRs
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    
+    steps:
+    - name: Dependabot metadata
+      id: metadata
+      uses: dependabot/fetch-metadata@v1
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Auto-merge minor and patch updates
+      if: steps.metadata.outputs.update-type == 'version-update:semver-minor' || steps.metadata.outputs.update-type == 'version-update:semver-patch'
+      run: gh pr merge --auto --merge "$PR_URL"
+      env:
+        PR_URL: ${{ github.event.pull_request.html_url }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

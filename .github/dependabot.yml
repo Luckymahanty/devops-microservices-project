@@ -1,0 +1,80 @@
+version: 2
+updates:
+  # Enable version updates for npm (User Service)
+  - package-ecosystem: "npm"
+    directory: "/services/user-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "user-service"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # Enable version updates for npm (Product Service)
+  - package-ecosystem: "npm"
+    directory: "/services/product-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "product-service"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # Enable version updates for npm (Order Service)
+  - package-ecosystem: "npm"
+    directory: "/services/order-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "order-service"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # Enable version updates for Docker
+  - package-ecosystem: "docker"
+    directory: "/services/user-service"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "docker"
+
+  - package-ecosystem: "docker"
+    directory: "/services/product-service"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "docker"
+
+  - package-ecosystem: "docker"
+    directory: "/services/order-service"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "docker"
+
+  # Enable version updates for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "github-actions"
