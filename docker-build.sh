@@ -15,7 +15,7 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 # Docker registry (change this to your DockerHub username)
-DOCKER_REGISTRY=${DOCKER_REGISTRY:-"yourusername"}
+DOCKER_REGISTRY=${DOCKER_REGISTRY:-"alpha0029"}
 VERSION=${VERSION:-"latest"}
 
 # Build User Service

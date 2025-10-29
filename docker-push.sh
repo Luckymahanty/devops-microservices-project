@@ -15,7 +15,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Docker registry (change this to your DockerHub username)
-DOCKER_REGISTRY=${DOCKER_REGISTRY:-"yourusername"}
+DOCKER_REGISTRY=${DOCKER_REGISTRY:-"alpha0029"}
 VERSION=${VERSION:-"latest"}
 
 # Check if logged in to Docker
@@ -25,8 +25,8 @@ if ! docker info > /dev/null 2>&1; then
 fi
 
 # Prompt for DockerHub username if using default
-if [ "$DOCKER_REGISTRY" = "yourusername" ]; then
-    echo -e "${BLUE}Enter your DockerHub username:${NC}"
+if [ "$DOCKER_REGISTRY":-"alpha0029" ]; then
+    echo -e "$alpha0029:${NC}"
     read DOCKER_USERNAME
     DOCKER_REGISTRY=$DOCKER_USERNAME
 fi
