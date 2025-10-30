@@ -229,11 +229,14 @@ jobs:
       run: |
         echo "Creating environment files..."
         # These will be created by docker-compose from env vars
+        
+      - name: Install Docker Compose
+        run: |
+         sudo apt-get update
+         sudo apt-get install -y docker-compose
     
     - name: Start services with Docker Compose
       run: |
-        sudo apt-get update
-        sudo apt-get install -y docker-compose
         docker-compose up -d
         echo "Waiting for services to be healthy..."
         sleep 30
