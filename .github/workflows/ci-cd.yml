@@ -232,6 +232,8 @@ jobs:
     
     - name: Start services with Docker Compose
       run: |
+        sudo apt-get update
+        sudo apt-get install -y docker-compose
         docker-compose up -d
         echo "Waiting for services to be healthy..."
         sleep 30
