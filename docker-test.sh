@@ -1,58 +1,130 @@
 #!/bin/bash
 
-# Docker Push Script - Push images to DockerHub
-# Make sure to run 'docker login' first
+# Docker Test Script - Test containerized microservices
 
-set -e
-
-echo "🚀 Pushing Docker images to DockerHub..."
+echo "🧪 Testing Dockerized Microservices..."
 echo ""
 
 # Colors
 GREEN='\033[0;32m'
-BLUE='\033[0;34m'
 RED='\033[0;31m'
+BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Your DockerHub username (locked to alpha0029)
-DOCKER_REGISTRY="alpha0029"
-VERSION=${VERSION:-"latest"}
+# Wait for services to be healthy
+echo -e "${BLUE}⏳ Waiting for services to be ready...${NC}"
+sleep 10
 
-# Ensure Docker is running
-if ! docker info > /dev/null 2>&1; then
-    echo -e "${RED}❌ Docker is not running. Please start Docker first.${NC}"
-    exit 1
+# Function to test endpoint
+test_endpoint() {
+    local service=$1
+    local url=$2
+    local expected_status=$3
+    
+    echo -e "${BLUE}Testing ${service}...${NC}"
+    response=$(curl -s -o /dev/null -w "%{http_code}" "$url")
+    
+    if [ "$response" -eq "$expected_status" ]; then
+        echo -e "${GREEN}✅ ${service} is healthy (HTTP $response)${NC}"
+        return 0
+    else
+        echo -e "${RED}❌ ${service} failed (HTTP $response)${NC}"
+        return 1
+    fi
+}
+
+# Test health endpoints
+echo "=== Health Checks ==="
+test_endpoint "User Service" "http://localhost:3001/health" 200
+test_endpoint "Product Service" "http://localhost:3002/health" 200
+test_endpoint "Order Service" "http://localhost:3003/health" 200
+echo ""
+
+# Test User Service
+echo "=== Testing User Service ==="
+echo "Registering user..."
+USER_RESPONSE=$(curl -s -X POST http://localhost:3001/api/users/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "dockeruser",
+    "email": "docker@example.com",
+    "password": "dockerpass123"
+  }')
+
+if echo "$USER_RESPONSE" | grep -q "userId"; then
+    echo -e "${GREEN}✅ User registration successful${NC}"
+    USER_ID=$(echo "$USER_RESPONSE" | grep -o '"userId":"[^"]*"' | cut -d'"' -f4)
+    echo "User ID: $USER_ID"
+else
+    echo -e "${RED}❌ User registration failed${NC}"
+    echo "$USER_RESPONSE"
 fi
-
-echo -e "${BLUE}📦 Using DockerHub registry: ${DOCKER_REGISTRY}${NC}"
 echo ""
 
-# Push User Service
-echo -e "${BLUE}📤 Pushing User Service...${NC}"
-docker push ${DOCKER_REGISTRY}/user-service:${VERSION}
-docker push ${DOCKER_REGISTRY}/user-service:latest
-echo -e "${GREEN}✅ User Service pushed successfully${NC}"
+# Test Product Service
+echo "=== Testing Product Service ==="
+echo "Creating product..."
+PRODUCT_RESPONSE=$(curl -s -X POST http://localhost:3002/api/products \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Docker Laptop",
+    "description": "Laptop tested in Docker",
+    "price": 1299.99,
+    "stock": 100,
+    "category": "Electronics"
+  }')
+
+if echo "$PRODUCT_RESPONSE" | grep -q "product"; then
+    echo -e "${GREEN}✅ Product creation successful${NC}"
+    PRODUCT_ID=$(echo "$PRODUCT_RESPONSE" | grep -o '"_id":"[^"]*"' | head -1 | cut -d'"' -f4)
+    echo "Product ID: $PRODUCT_ID"
+else
+    echo -e "${RED}❌ Product creation failed${NC}"
+    echo "$PRODUCT_RESPONSE"
+fi
 echo ""
 
-# Push Product Service
-echo -e "${BLUE}📤 Pushing Product Service...${NC}"
-docker push ${DOCKER_REGISTRY}/product-service:${VERSION}
-docker push ${DOCKER_REGISTRY}/product-service:latest
-echo -e "${GREEN}✅ Product Service pushed successfully${NC}"
+# Test Order Service
+echo "=== Testing Order Service ==="
+if [ -n "$USER_ID" ] && [ -n "$PRODUCT_ID" ]; then
+    echo "Creating order..."
+    ORDER_RESPONSE=$(curl -s -X POST http://localhost:3003/api/orders \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"userId\": \"$USER_ID\",
+        \"items\": [
+          {
+            \"productId\": \"$PRODUCT_ID\",
+            \"quantity\": 2
+          }
+        ]
+      }")
+
+    if echo "$ORDER_RESPONSE" | grep -q "order"; then
+        echo -e "${GREEN}✅ Order creation successful${NC}"
+        ORDER_ID=$(echo "$ORDER_RESPONSE" | grep -o '"_id":"[^"]*"' | head -1 | cut -d'"' -f4)
+        echo "Order ID: $ORDER_ID"
+    else
+        echo -e "${RED}❌ Order creation failed${NC}"
+        echo "$ORDER_RESPONSE"
+    fi
+else
+    echo -e "${RED}❌ Cannot test orders - missing user or product ID${NC}"
+fi
 echo ""
 
-# Push Order Service
-echo -e "${BLUE}📤 Pushing Order Service...${NC}"
-docker push ${DOCKER_REGISTRY}/order-service:${VERSION}
-docker push ${DOCKER_REGISTRY}/order-service:latest
-echo -e "${GREEN}✅ Order Service pushed successfully${NC}"
+# Check container stats
+echo "=== Container Status ==="
+docker compose ps
 echo ""
 
-# Done
-echo -e "${GREEN}🎉 All images pushed successfully!${NC}"
+echo -e "${GREEN}🎉 Docker tests completed!${NC}"
 echo ""
-echo "Your images are now available at:"
-echo "  🔗 https://hub.docker.com/r/${DOCKER_REGISTRY}/user-service"
-echo "  🔗 https://hub.docker.com/r/${DOCKER_REGISTRY}/product-service"
-echo "  🔗 https://hub.docker.com/r/${DOCKER_REGISTRY}/order-service"
+echo "To view logs:"
+echo "  docker compose logs -f user-service"
+echo "  docker compose logs -f product-service"
+echo "  docker compose logs -f order-service"
+echo ""
+echo "To stop all containers:"
+echo "  docker compose down"
 
