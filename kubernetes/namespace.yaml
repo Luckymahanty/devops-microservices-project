@@ -1,0 +1,11 @@
+# kubernetes/namespace.yaml
+# Create isolated namespace for our microservices
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: microservices
+  labels:
+    name: microservices
+    environment: production
+    project: devops-demo
